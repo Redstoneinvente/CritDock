@@ -18,7 +18,7 @@ const types=['Idea','Image','Video','UI/UX','Game Art','3D Asset','Animation','T
 const roles=['Developer','Game Developer','Designer','Artist','Player','Product Designer','Programmer','Animator','Marketer','Other']
 
 const seed={
- id:'storefront-capsule',title:'Which Storefront capsule works best?',description:"I'm preparing the Steam page for a supermarket simulator. It needs to read clearly even at small thumbnail sizes.",kind:'Image',status:'active',duration:'24 hours',createdAt:Date.now()-1000*60*60*6,
+ id:'storefront-capsule',title:'Which Storefront capsule works best?',description:"I'm preparing the Steam page for a supermarket simulator. It needs to read clearly even at small thumbnail sizes.",kind:'Image',status:'active',visibility:'public',duration:'24 hours',createdAt:Date.now()-1000*60*60*6,endsAt:Date.now()+1000*60*60*18,
  assets:[
   {title:'Option A',url:'https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/2670630/header.jpg',description:'Current direction'},
   {title:'Option B',url:'https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/2670630/capsule_616x353.jpg',description:'Alternate crop'},
@@ -50,6 +50,19 @@ function useRoute(){
 const go=p=>location.hash='#/'+p
 const icon=(name)=>({plus:'＋',arrow:'→',copy:'⧉',moon:'◐',check:'✓',x:'×',link:'↗',menu:'☰'}[name]||'')
 
+const durationMs=d=>({'1 hour':3600000,'6 hours':21600000,'12 hours':43200000,'24 hours':86400000,'3 days':259200000,'7 days':604800000}[d]||null)
+const timeLeft=s=>{if(!s.endsAt)return 'No deadline';const ms=s.endsAt-Date.now();if(ms<=0)return 'Ended';const h=Math.ceil(ms/3600000);return h<24?`${h}h left`:`${Math.ceil(h/24)}d left`}
+const stableNoise=id=>{let h=2166136261;for(const c of String(id))h=Math.imul(h^c.charCodeAt(0),16777619);return ((h>>>0)%1000)/1000}
+const exposureScore=s=>{
+ const now=Date.now(),responses=s.responses?.length||0,ageH=Math.max(0,(now-(s.createdAt||now))/3600000)
+ const hours=s.endsAt?Math.max(0,(s.endsAt-now)/3600000):168
+ const urgency=s.endsAt?1-Math.min(1,hours/168):.15
+ const need=1-Math.min(1,responses/20)
+ const freshness=1-Math.min(1,ageH/168)
+ const rotation=stableNoise(s.id+Math.floor(now/(1000*60*60*6)))
+ return urgency*.38+need*.34+freshness*.18+rotation*.10
+}
+
 function App(){
  const route=useRoute()
  const [sprints,setSprints]=useState(load)
@@ -58,7 +71,7 @@ function App(){
  useEffect(()=>localStorage.setItem('critdock:sprints',JSON.stringify(sprints)),[sprints])
  const save=s=>setSprints(x=>[s,...x.filter(v=>v.id!==s.id)])
  const path=route.split('/')
- if(route==='home') return <Shell theme={theme} setTheme={setTheme}><Home/></Shell>
+ if(route==='home') return <Shell theme={theme} setTheme={setTheme}><Home sprints={sprints}/></Shell>
  if(route==='create') return <Shell theme={theme} setTheme={setTheme} minimal><Create onSave={s=>{save(s);go('dashboard')}}/></Shell>
  if(route==='templates') return <Shell theme={theme} setTheme={setTheme}><Templates/></Shell>
  if(route==='dashboard') return <Shell theme={theme} setTheme={setTheme}><Dashboard sprints={sprints} setSprints={setSprints}/></Shell>
@@ -77,13 +90,22 @@ function Shell({children,theme,setTheme,minimal=false}){
  </div>
 }
 
-function Home(){
+function Home({sprints}){
+ const [query,setQuery]=useState('')
+ const publicSprints=useMemo(()=>sprints.filter(s=>s.status==='active'&&(s.visibility||'public')==='public'&&(!s.endsAt||s.endsAt>Date.now())).sort((a,b)=>exposureScore(b)-exposureScore(a)),[sprints])
+ const filtered=publicSprints.filter(s=>[s.title,s.description,s.kind,...(s.criteria||[]).map(c=>c.title)].join(' ').toLowerCase().includes(query.toLowerCase()))
  return <main>
-  <section className="hero">
+  <section className="hero discoveryHero">
    <div className="eyebrow"><span></span>Fast validation for people who build things</div>
    <h1>Get useful feedback<br/>before you ship.</h1>
-   <p className="heroCopy">Run quick, structured feedback sprints for your ideas, designs, assets, and prototypes. No giant surveys. No social feed. Just the questions that matter.</p>
-   <div className="actions"><button className="primary" onClick={()=>go('create')}>Create a Crit Sprint {icon('arrow')}</button><a href="#how" className="secondary">See how it works</a></div>
+   <p className="heroCopy">Run quick, structured feedback sprints for your ideas, designs, assets, and prototypes. Create one in minutes, or help another builder by reviewing a live Sprint.</p>
+   <div className="actions"><button className="primary" onClick={()=>go('create')}>Create a Crit Sprint {icon('arrow')}</button><a href="#discover" className="secondary">Review live Sprints</a></div>
+   <div className="heroProof"><span><b>Public</b> Sprints can be discovered and searched</span><span><b>Unlisted</b> stays link-only</span><span><b>Private</b> requires an access code</span></div>
+  </section>
+  <section className="discovery" id="discover">
+   <div className="discoverHead"><div><div className="sectionLabel">LIVE CRIT SPRINTS</div><h2>Give useful feedback. Get useful feedback.</h2><p>Public Sprints are ranked to spread attention toward work that still needs responses, with a measured boost as deadlines approach.</p></div><label className="searchBox"><span>⌕</span><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search Sprints, topics, criteria…"/></label></div>
+   <div className="discoverMeta"><span>{filtered.length} active public Sprint{filtered.length!==1?'s':''}</span><span>Balanced by response need · freshness · time remaining</span></div>
+   {filtered.length?<div className="sprintGrid">{filtered.map((s,i)=><SprintCard key={s.id} sprint={s} featured={i===0}/>)}</div>:<div className="discoverEmpty"><h3>No matching public Sprints.</h3><p>Try another search, or create the first one in this category.</p><button className="secondary" onClick={()=>go('create')}>Create a Crit Sprint</button></div>}
   </section>
   <section className="productShot" aria-label="CritDock example">
    <div className="shotTop"><div><span className="tiny">CRIT SPRINT</span><h3>Steam Capsule Review</h3></div><span className="status"><i></i>18h remaining</span></div>
@@ -105,6 +127,15 @@ function Home(){
  </main>
 }
 
+function SprintCard({sprint,featured}){
+ const asset=sprint.assets?.[0]
+ const preview=asset?.url&&(/\.(jpg|jpeg|png|webp|gif|avif)(\?.*)?$/i.test(asset.url)||asset.url.includes('steamstatic.com'))
+ return <button className={'sprintCard'+(featured?' featured':'')} onClick={()=>go('s/'+sprint.id)}>
+  <div className="sprintPreview">{preview?<img src={asset.url} alt=""/>:<div className="sprintFallback"><span className="mark"><i/></span><b>{sprint.kind}</b></div>}<span className="visibilityBadge">Public</span></div>
+  <div className="sprintCardBody"><div className="sprintCardMeta"><span>{sprint.kind}</span><span>{timeLeft(sprint)}</span></div><h3>{sprint.title}</h3><p>{sprint.description||'A focused Crit Sprint looking for feedback.'}</p><div className="sprintCardFoot"><span><b>{sprint.responses?.length||0}</b> responses</span><span>{sprint.criteria?.length||0} criteria</span><strong>Review {icon('arrow')}</strong></div></div>
+ </button>
+}
+
 function Templates(){
  return <main className="page narrow"><div className="pageIntro"><div className="sectionLabel">TEMPLATES</div><h1>Start focused, not from zero.</h1><p>Each template gives you a practical set of criteria. Change, remove, or add anything before sharing.</p></div>
  <div className="templateList">{TEMPLATES.map(([name,criteria],i)=><button key={name} onClick={()=>go('create')}><div><span>{String(i+1).padStart(2,'0')}</span><h3>{name}</h3></div><p>{criteria.slice(0,4).join(' · ')}{criteria.length>4?' · …':''}</p><b>{criteria.length} criteria {icon('arrow')}</b></button>)}</div></main>
@@ -112,15 +143,15 @@ function Templates(){
 
 function Create({onSave}){
  const [step,setStep]=useState(0),[template,setTemplate]=useState(null)
- const [data,setData]=useState({title:'',description:'',kind:'Image',duration:'24 hours',assets:[{title:'Option A',description:'',url:'',text:''}],criteria:[]})
+ const [data,setData]=useState({title:'',description:'',kind:'Image',duration:'24 hours',visibility:'public',privateCode:'',assets:[{title:'Option A',description:'',url:'',text:''}],criteria:[]})
  const applyTemplate=t=>{setTemplate(t);setData(d=>({...d,criteria:TEMPLATES.find(x=>x[0]===t)[1].map(c=>({title:c,prompt:'',type:'rating',max:5}))}));setStep(1)}
  const addAsset=()=>setData(d=>({...d,assets:[...d.assets,{title:'Option '+String.fromCharCode(65+d.assets.length),description:'',url:'',text:''}]}))
  const addCriterion=()=>setData(d=>({...d,criteria:[...d.criteria,{title:'New criterion',prompt:'',type:'rating',max:5}]}))
- const publish=()=>{const slug=(data.title||'crit-sprint').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,34)+'-'+Math.random().toString(36).slice(2,6);onSave({...data,id:slug,status:'active',createdAt:Date.now(),responses:[]})}
+ const publish=()=>{const slug=(data.title||'crit-sprint').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,34)+'-'+Math.random().toString(36).slice(2,6);const createdAt=Date.now(),ms=durationMs(data.duration),privateCode=data.visibility==='private'?(data.privateCode.trim()||Math.random().toString(36).slice(2,8).toUpperCase()):'';onSave({...data,id:slug,status:'active',createdAt,endsAt:ms?createdAt+ms:null,privateCode,responses:[]})}
  return <main className="creator">
   <div className="creatorTop"><div><button className="backLink" onClick={()=>step?setStep(step-1):go('home')}>← Back</button><span className="muted">Create a Crit Sprint</span></div><div className="progressTiny"><span>{step+1}/4</span><i><b style={{width:(step+1)*25+'%'}}/></i></div></div>
   {step===0&&<div className="createPanel"><div className="createHead"><div className="sectionLabel">STARTING POINT</div><h1>What are you reviewing?</h1><p>Use a template for a fast start, or build your own Sprint from scratch.</p></div><div className="choiceGrid"><button className="startBlank" onClick={()=>{setTemplate('Custom');setStep(1)}}><span>{icon('plus')}</span><b>Start from scratch</b><small>Build your own criteria</small></button>{TEMPLATES.map(([name,c])=><button key={name} onClick={()=>applyTemplate(name)}><b>{name}</b><small>{c.length} ready-to-edit criteria</small><span>{icon('arrow')}</span></button>)}</div></div>}
-  {step===1&&<div className="createPanel compact"><div className="createHead"><div className="sectionLabel">01 · BASICS</div><h1>Set the context.</h1><p>Give reviewers just enough information to judge the work properly.</p></div><Field label="Sprint title" hint="Be specific about the decision you need help with."><input value={data.title} onChange={e=>setData({...data,title:e.target.value})} placeholder="Which capsule communicates supermarket simulation best?"/></Field><Field label="Context" optional><textarea value={data.description} onChange={e=>setData({...data,description:e.target.value})} placeholder="What should reviewers know before they start?"/></Field><div className="fieldRow"><Field label="What are you validating?"><select value={data.kind} onChange={e=>setData({...data,kind:e.target.value})}>{types.map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Sprint duration"><select value={data.duration} onChange={e=>setData({...data,duration:e.target.value})}>{['No deadline','1 hour','6 hours','12 hours','24 hours','3 days','7 days','Custom'].map(x=><option key={x}>{x}</option>)}</select></Field></div><div className="nextBar"><span>Template: <b>{template}</b></span><button className="primary" disabled={!data.title.trim()} onClick={()=>setStep(2)}>Add your work {icon('arrow')}</button></div></div>}
+  {step===1&&<div className="createPanel compact"><div className="createHead"><div className="sectionLabel">01 · BASICS</div><h1>Set the context.</h1><p>Give reviewers just enough information to judge the work properly.</p></div><Field label="Sprint title" hint="Be specific about the decision you need help with."><input value={data.title} onChange={e=>setData({...data,title:e.target.value})} placeholder="Which capsule communicates supermarket simulation best?"/></Field><Field label="Context" optional><textarea value={data.description} onChange={e=>setData({...data,description:e.target.value})} placeholder="What should reviewers know before they start?"/></Field><div className="fieldRow"><Field label="What are you validating?"><select value={data.kind} onChange={e=>setData({...data,kind:e.target.value})}>{types.map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Sprint duration"><select value={data.duration} onChange={e=>setData({...data,duration:e.target.value})}>{['No deadline','1 hour','6 hours','12 hours','24 hours','3 days','7 days'].map(x=><option key={x}>{x}</option>)}</select></Field></div><Field label="Who can access this Sprint?"><div className="visibilityChoices">{[['public','Public','Searchable and eligible for homepage discovery.'],['unlisted','Unlisted','Only people with the link can find it.'],['private','Private','Hidden from discovery and protected by an access code.']].map(([v,n,d])=><button type="button" key={v} className={data.visibility===v?'active':''} onClick={()=>setData({...data,visibility:v})}><span>{data.visibility===v?'●':'○'}</span><div><b>{n}</b><small>{d}</small></div></button>)}</div></Field>{data.visibility==='private'&&<Field label="Private access code" hint="Leave blank and CritDock will generate one for you."><input value={data.privateCode} onChange={e=>setData({...data,privateCode:e.target.value.toUpperCase()})} placeholder="e.g. BUILD42"/></Field>}<div className="nextBar"><span>Template: <b>{template}</b></span><button className="primary" disabled={!data.title.trim()} onClick={()=>setStep(2)}>Add your work {icon('arrow')}</button></div></div>}
   {step===2&&<div className="createPanel compact"><div className="createHead"><div className="sectionLabel">02 · CONTENT</div><h1>Add what you're validating.</h1><p>CritDock does not host your media. Paste a public link to your image, video, prototype, or asset.</p></div>{data.assets.map((a,i)=><div className="assetEditor" key={i}><div className="assetNum">{String(i+1).padStart(2,'0')}</div><div><Field label="Label"><input value={a.title} onChange={e=>{const assets=[...data.assets];assets[i]={...a,title:e.target.value};setData({...data,assets})}}/></Field>{data.kind==='Copy/Text'?<Field label="Text"><textarea value={a.text} onChange={e=>{const assets=[...data.assets];assets[i]={...a,text:e.target.value};setData({...data,assets})}} placeholder="Paste the text to review…"/></Field>:<Field label="Public URL"><input type="url" value={a.url} onChange={e=>{const assets=[...data.assets];assets[i]={...a,url:e.target.value};setData({...data,assets})}} placeholder="https://…"/></Field>}<Field label="Description" optional><input value={a.description} onChange={e=>{const assets=[...data.assets];assets[i]={...a,description:e.target.value};setData({...data,assets})}} placeholder="What makes this option different?"/></Field></div>{data.assets.length>1&&<button className="remove" onClick={()=>setData({...data,assets:data.assets.filter((_,j)=>j!==i)})}>Remove</button>}</div>)}<button className="addRow" onClick={addAsset}>{icon('plus')} Add another option</button><div className="nextBar"><span>{data.assets.length} option{data.assets.length!==1?'s':''}</span><button className="primary" onClick={()=>setStep(3)}>Define feedback {icon('arrow')}</button></div></div>}
   {step===3&&<div className="createPanel compact"><div className="createHead"><div className="sectionLabel">03 · CRITERIA</div><h1>Ask what actually matters.</h1><p>Keep each section focused. Reviewers will move through these one at a time.</p></div>{data.criteria.map((c,i)=><div className="criterionEditor" key={i}><div className="criterionNo">{String(i+1).padStart(2,'0')}</div><div><input className="criterionTitle" value={c.title} onChange={e=>{const criteria=[...data.criteria];criteria[i]={...c,title:e.target.value};setData({...data,criteria})}}/><input value={c.prompt} onChange={e=>{const criteria=[...data.criteria];criteria[i]={...c,prompt:e.target.value};setData({...data,criteria})}} placeholder="Optional question or instruction"/><select value={c.type} onChange={e=>{const criteria=[...data.criteria];criteria[i]={...c,type:e.target.value};setData({...data,criteria})}}><option value="rating">Rating 1–5</option><option value="choice">Single choice</option><option value="yesno">Yes / No</option><option value="short">Short text</option></select></div><button className="remove" onClick={()=>setData({...data,criteria:data.criteria.filter((_,j)=>j!==i)})}>Remove</button></div>)}<button className="addRow" onClick={addCriterion}>{icon('plus')} Add criterion</button><div className="finalFeedback"><b>Anything else?</b><span>Always included · optional free-form feedback</span><p>Have something the questions didn't cover? Leave any additional thoughts here.</p></div><div className="nextBar"><span>{data.criteria.length} criteria + final thoughts</span><button className="primary" onClick={publish} disabled={!data.criteria.length}>Publish Crit Sprint {icon('arrow')}</button></div></div>}
  </main>
@@ -137,9 +168,10 @@ function Media({asset}){
  return <div className="emptyMedia">No preview URL provided</div>
 }
 function Review({sprint,onSubmit}){
- const [idx,setIdx]=useState(-1),[answers,setAnswers]=useState([]),[asset,setAsset]=useState(0),[note,setNote]=useState(''),[done,setDone]=useState(false),[info,setInfo]=useState({name:'',role:''})
+ const [idx,setIdx]=useState(-1),[answers,setAnswers]=useState([]),[asset,setAsset]=useState(0),[note,setNote]=useState(''),[done,setDone]=useState(false),[info,setInfo]=useState({name:'',role:''}),[code,setCode]=useState(''),[unlocked,setUnlocked]=useState(sprint.visibility!=='private')
  const criteria=sprint.criteria||[]
  const total=criteria.length+1
+ if(!unlocked)return <div className="privateGate"><Logo/><main><div className="sectionLabel">PRIVATE CRIT SPRINT</div><h1>Access required.</h1><p>This Sprint is private. Enter the access code from its creator to continue.</p><input autoFocus value={code} onChange={e=>setCode(e.target.value.toUpperCase())} placeholder="Access code"/><button className="primary wide" onClick={()=>setUnlocked(code.trim()===sprint.privateCode)}>Open Crit Sprint {icon('arrow')}</button>{code&&code.trim()!==sprint.privateCode&&<small>Code does not match.</small>}</main></div>
  const current=criteria[idx]
  const answer=(v)=>{const a=[...answers];a[idx]=v;setAnswers(a)}
  const submit=()=>{onSubmit(sprint.id,{...info,name:info.name||'Anonymous',answers,note,createdAt:Date.now()});setDone(true)}
@@ -159,7 +191,7 @@ function Dashboard({sprints,setSprints}){
  const [tab,setTab]=useState('Active')
  const filtered=sprints.filter(s=>tab==='Active'?s.status==='active':tab==='Completed'?s.status==='closed':s.status==='draft')
  const remove=id=>setSprints(x=>x.filter(s=>s.id!==id))
- return <main className="page dashboard"><div className="dashHead"><div><div className="sectionLabel">WORKSPACE</div><h1>Your Crit Sprints</h1></div><button className="primary" onClick={()=>go('create')}>{icon('plus')} Create a Crit Sprint</button></div><div className="tabs">{['Active','Completed','Drafts','Templates'].map(t=><button key={t} className={tab===t?'active':''} onClick={()=>t==='Templates'?go('templates'):setTab(t)}>{t}</button>)}</div>{filtered.length?<div className="sprintTable">{filtered.map(s=><div className="sprintRow" key={s.id}><div><span className={'state '+s.status}><i></i>{s.status}</span><button className="titleBtn" onClick={()=>go('results/'+s.id)}>{s.title}</button><small>{s.kind} · {s.criteria.length} criteria</small></div><div className="metric"><b>{s.responses?.length||0}</b><span>responses</span></div><div className="metric"><b>{s.duration}</b><span>duration</span></div><div className="rowActions"><button onClick={()=>navigator.clipboard?.writeText(location.href.split('#')[0]+'#/s/'+s.id)}>Copy link</button><button onClick={()=>setSprints(xs=>xs.map(x=>x.id===s.id?{...x,status:x.status==='active'?'closed':'active'}:x))}>{s.status==='active'?'Close':'Reopen'}</button><button className="danger" onClick={()=>remove(s.id)}>Delete</button></div></div>)}</div>:<div className="emptyState"><span className="mark big"><i></i></span><h3>No {tab.toLowerCase()} Sprints.</h3><p>Create a quick feedback Sprint and send it to a few people.</p><button className="primary" onClick={()=>go('create')}>Create Crit Sprint</button></div>}</main>
+ return <main className="page dashboard"><div className="dashHead"><div><div className="sectionLabel">WORKSPACE</div><h1>Your Crit Sprints</h1></div><button className="primary" onClick={()=>go('create')}>{icon('plus')} Create a Crit Sprint</button></div><div className="tabs">{['Active','Completed','Drafts','Templates'].map(t=><button key={t} className={tab===t?'active':''} onClick={()=>t==='Templates'?go('templates'):setTab(t)}>{t}</button>)}</div>{filtered.length?<div className="sprintTable">{filtered.map(s=><div className="sprintRow" key={s.id}><div><span className={'state '+s.status}><i></i>{s.status}</span><button className="titleBtn" onClick={()=>go('results/'+s.id)}>{s.title}</button><small>{s.kind} · {s.criteria.length} criteria · {(s.visibility||'public')}</small></div><div className="metric"><b>{s.responses?.length||0}</b><span>responses</span></div><div className="metric"><b>{s.duration}</b><span>duration</span></div><div className="rowActions"><button onClick={()=>navigator.clipboard?.writeText(location.href.split('#')[0]+'#/s/'+s.id)}>Copy link</button><button onClick={()=>setSprints(xs=>xs.map(x=>x.id===s.id?{...x,status:x.status==='active'?'closed':'active'}:x))}>{s.status==='active'?'Close':'Reopen'}</button><button className="danger" onClick={()=>remove(s.id)}>Delete</button></div></div>)}</div>:<div className="emptyState"><span className="mark big"><i></i></span><h3>No {tab.toLowerCase()} Sprints.</h3><p>Create a quick feedback Sprint and send it to a few people.</p><button className="primary" onClick={()=>go('create')}>Create Crit Sprint</button></div>}</main>
 }
 
 function Results({sprint}){
